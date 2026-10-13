@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: khs on Python ${{ matrix.python }}
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Tests (the ownership and capability tests also run as root)
+        run: |
+          python -m unittest discover -s tests -t . -v
+          sudo -E env "PATH=$PATH" python -m unittest tests.test_backup -v
+      - name: Lint
+        run: pip install ruff==0.6.9 && ruff check .
+      - name: Package installs and runs
+        run: pip install . && khs --version && khs config-check --config etc/khs.example.toml
+
+  scripts:
+    name: Shell and systemd
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck provision/setup.sh
+      - name: systemd units
+        run: |
+          sudo install -m 755 /dev/null /usr/local/bin/khs
+          systemd-analyze verify systemd/*.service systemd/*.timer
+
+  stack:
+    name: Compose stack
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: stack
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose file resolves, and refuses to start without LAN_IP
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          ! env -u LAN_IP docker compose --env-file /dev/null config --quiet 2>/dev/null
+      - name: Every pinned image exists
+        run: docker compose pull
+      - name: Caddyfile is valid
+        run: docker run --rm -e BASE_DOMAIN=home.arpa -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.8.4-alpine caddy validate --config /etc/caddy/Caddyfile

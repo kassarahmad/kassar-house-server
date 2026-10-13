@@ -1,0 +1,26 @@
+[project]
+name = "khs"
+version = "0.1.0"
+description = "Backups, health checks and a system report for a home Linux server"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Ahmad Kassar" }]
+dependencies = []
+
+[project.scripts]
+khs = "khs.cli:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["khs"]
+
+[tool.ruff]
+line-length = 150
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
