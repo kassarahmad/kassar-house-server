@@ -1,0 +1,47 @@
+# TLS from Caddy's own certificate authority: valid for names that only exist on the LAN.
+# Install its root certificate on your devices once (see docs/RUNBOOK.md) to avoid warnings.
+# *.home.arpa is reserved for home networks (RFC 8375); point the names at the server in
+# your router's DNS or in each device's hosts file.
+{
+	admin 127.0.0.1:2019
+	local_certs
+}
+
+(lan_only) {
+	@outside not remote_ip private_ranges
+	respond @outside "LAN only" 403
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$BASE_DOMAIN} {
+	import lan_only
+	root * /srv/site
+	file_server
+}
+
+vault.{$BASE_DOMAIN} {
+	import lan_only
+	reverse_proxy vaultwarden:80
+}
+
+media.{$BASE_DOMAIN} {
+	import lan_only
+	reverse_proxy jellyfin:8096
+}
+
+sync.{$BASE_DOMAIN} {
+	import lan_only
+	# Syncthing rejects requests whose Host header it doesn't recognise.
+	reverse_proxy syncthing:8384 {
+		header_up Host {upstream_hostport}
+	}
+}

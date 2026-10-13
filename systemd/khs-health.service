@@ -1,0 +1,26 @@
+[Unit]
+Description=khs: run health checks and notify on changes
+Documentation=https://github.com/kassarahmad/kassar-house-server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=KHS_CONFIG=/etc/khs/khs.toml
+ExecStart=/usr/local/bin/khs health --notify
+# A failing check is reported by the notification; it is not a failure of this unit.
+SuccessExitStatus=1
+
+ProtectSystem=strict
+ReadWritePaths=/var/lib/khs
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native

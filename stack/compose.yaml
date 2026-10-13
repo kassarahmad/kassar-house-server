@@ -1,0 +1,87 @@
+# Home services behind one reverse proxy, reachable from the LAN only.
+#
+#   LAN ──443──► caddy ──proxy network──► vaultwarden, jellyfin, syncthing
+#
+# - Only Caddy and Syncthing's sync ports are published, and only on the server's LAN address
+#   (LAN_IP): Docker's published ports bypass ufw, so binding to one interface is what keeps
+#   them off any other network the machine is connected to.
+# - No container gets the Docker socket, host networking or extra privileges.
+# - Data lives in bind mounts under DATA_DIR, which is what `khs backup` backs up.
+# Copy .env.example to .env, then: docker compose up -d
+
+name: house
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  caddy:
+    <<: *hardening
+    image: caddy:2.8.4-alpine
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    ports:
+      - "${LAN_IP:?set LAN_IP in .env}:80:80"
+      - "${LAN_IP}:443:443"
+      - "${LAN_IP}:443:443/udp"
+    environment:
+      BASE_DOMAIN: ${BASE_DOMAIN:-home.arpa}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./site:/srv/site:ro
+      - ${DATA_DIR:?set DATA_DIR in .env}/caddy/data:/data
+      - ${DATA_DIR}/caddy/config:/config
+    networks: [proxy]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  vaultwarden:
+    <<: *hardening
+    image: vaultwarden/server:1.32.0
+    environment:
+      DOMAIN: https://vault.${BASE_DOMAIN:-home.arpa}
+      SIGNUPS_ALLOWED: "false"         # invite users from the admin page or set true once, temporarily
+      INVITATIONS_ALLOWED: "true"
+      SHOW_PASSWORD_HINT: "false"
+      # No ADMIN_TOKEN: the /admin page stays disabled until you set one (an argon2 hash).
+      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN:-}
+    volumes:
+      - ${DATA_DIR}/vaultwarden:/data
+    networks: [proxy]
+
+  jellyfin:
+    <<: *hardening
+    image: jellyfin/jellyfin:10.9.11
+    user: "${PUID:-1000}:${PGID:-1000}"
+    volumes:
+      - ${DATA_DIR}/jellyfin/config:/config
+      - ${DATA_DIR}/jellyfin/cache:/cache
+      - ${MEDIA_DIR:?set MEDIA_DIR in .env}:/media:ro
+    networks: [proxy]
+
+  syncthing:
+    <<: *hardening
+    image: syncthing/syncthing:1.27.12
+    hostname: house-syncthing
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      - ${DATA_DIR}/syncthing:/var/syncthing
+    ports:
+      # Sync protocol and local discovery; the web GUI goes through Caddy.
+      - "${LAN_IP}:22000:22000/tcp"
+      - "${LAN_IP}:22000:22000/udp"
+      - "${LAN_IP}:21027:21027/udp"
+    networks: [proxy]
+
+networks:
+  proxy: {}

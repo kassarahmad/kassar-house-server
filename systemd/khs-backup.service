@@ -1,0 +1,30 @@
+[Unit]
+Description=khs: back up the house server, then apply the retention policy
+Documentation=https://github.com/kassarahmad/kassar-house-server
+# The backup disk must be mounted; without this a missing USB drive would fill the root disk.
+RequiresMountsFor=/mnt/backup
+After=local-fs.target
+
+[Service]
+Type=oneshot
+Environment=KHS_CONFIG=/etc/khs/khs.toml
+# Exit code 3 means "finished, some files skipped": logged, not treated as a failure.
+SuccessExitStatus=3
+ExecStart=/usr/local/bin/khs backup
+ExecStartPost=/usr/local/bin/khs forget --prune
+Nice=10
+IOSchedulingClass=idle
+
+# Runs as root so it can read everything, but can only *write* to the repository and state.
+ProtectSystem=strict
+ReadWritePaths=/mnt/backup /var/lib/khs
+PrivateTmp=true
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
